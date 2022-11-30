@@ -1,0 +1,233 @@
+$defaultProps = @{
+
+    "Title" = "Data Import Wizard"
+
+    "Icon" = "/XXX.png"
+
+    "ShowHints" = $true
+
+}
+
+
+
+$uploadDirectory = Join-Path -Path $SitecoreDataFolder -ChildPath "temp"
+
+$importFilePath = Receive-File -Overwrite -Title $defaultProps.Title -Description "Choose a valid CSV file to import." -Icon $defaultProps.Icon -Path $uploadDirectory -OkButtonName "Next"
+
+$importData = Import-CSV $importFilePath
+
+$importedArticlesFolder = "/sitecore/content/*folder name*"
+
+$AuthorPath = "master:/sitecore/content/*Author path*"
+
+$ArticleFolderTempl="/sitecore/templates/*folder template*"
+
+
+
+$templateItem = Get-Item -Path "master:" -ID "{template id}" -ErrorAction SilentlyContinue
+
+
+
+foreach ($row in $importData) {
+
+    $itemName = $row.name
+
+    $newItemName = [Sitecore.Data.Items.ItemUtil]::ProposeValidItemName($itemName.Replace(" ","-"))
+
+    $itemPath = "$($importedArticlesFolder)/$($newItemName)"
+
+    $publishedon=$row.publishedon;
+
+    <#
+
+    $date =$publishedon.Split("-")
+
+    $year= $date[0] # extract year.
+
+    $month= $date[1]  #extract month
+
+    #>
+
+    $startTime = Get-Date $publishedon
+
+    $year=$startTime.Year  #extract year
+
+    $month = (Get-Culture).DateTimeFormat.GetMonthName($startTime.month) #extract month
+
+    $week=[Math]::Floor($($startTime.Day / 7))+1; #extract week
+
+
+
+  	$yearFolderPath = "$($importedArticlesFolder)/$($year)"
+
+	$monthFolderPath = "$($yearFolderPath)/$($month)"
+
+	$weekFolderPath = "$($monthFolderPath)/$($week)"
+
+	$currentItemYear = Get-Item -Path $yearFolderPath -ErrorAction SilentlyContinue #Get the sitecore Item
+
+	$currentItemMonth = Get-Item -Path $monthFolderPath -ErrorAction SilentlyContinue #Get the sitecore Item
+
+	$currentItemWeek = Get-Item -Path $weekFolderPath -ErrorAction SilentlyContinue #Get the sitecore Item
+
+	
+
+	 if($currentItemYear -eq  $null)
+
+	{
+
+	    # create Year folder in content tree
+
+	     $itemYear = New-Item -Path $yearFolderPath -ItemType $ArticleFolderTempl 	      
+
+	}
+
+	if($currentItemMonth -eq  $null)
+
+	{
+
+	    # create month folder within year folder in content tree
+
+	     $itemMonth = New-Item -Path $monthFolderPath -ItemType $ArticleFolderTempl 
+
+	}
+
+	if($currentItemWeek -eq  $null)
+
+	{
+
+	    # create month folder within month folder in content tree
+
+	     $itemMonth = New-Item -Path $weekFolderPath -ItemType $ArticleFolderTempl 
+
+	}	
+
+	<#  $item = New-Item -Path $itemPath -ItemType $templateItem.ID #>
+
+	$newItemPath="$($weekFolderPath)/$($newItemName)"
+
+	$item = New-Item -Path $newItemPath -ItemType $templateItem.ID  
+
+    
+
+    if ($item) {
+
+        $item.Editing.BeginEdit()
+
+        $authorName= $row.author
+
+        if($authorName)
+
+        {
+
+            #TBD- write seperate funtion to update multilist field in item
+
+          $authorlist=$authorName.Split(",");
+
+          $authorGuids="";
+
+          for($i=0 ; $i -lt $authorlist.Length; $i++) { 
+
+             $authorName=$authorlist[$i] ;
+
+             $authorItem=Get-Item -Path $AuthorPath/$authorName -ErrorAction SilentlyContinue
+
+           if (![string]::IsNullOrEmpty($authorGuids)) {
+
+                  $authorGuids+="|"
+
+        }
+
+            $authorGuids+= $authorItem.ID.ToString();      
+
+        }
+
+        $item["Authors"]=$authorGuids;
+
+        }
+
+        
+
+        $item["Title"]= $itemName;
+
+        $publishDate = ([sitecore.dateutil]::ToIsoDate($publishedon))
+
+       # $item["Authors"] = $authorItem.ID;
+
+        $item["BannerDate"]= $publishDate;
+
+        $item["ShortDescription"]= $itemName; 
+
+        $item["Content"] = $row.content
+
+        $item.Editing.EndEdit() | Out-Null
+
+        Write-Host "$($item.Paths.FullPath) is created" -ForegroundColor Green
+
+    }
+
+    else {
+
+        Write-Host "Couldn't find: $($itemPath)"  -ForegroundColor Red
+
+    }
+
+}
+
+Write-Host "Data Import is done." -ForegroundColor Green
+
+<#
+
+$allItem = Get-ChildItem -Path $AuthorPath -Recurse | where-object 
+
+{$_.Fields["First Name"].Value -eq "Alastair"}
+
+Write-Host "$allItem" 
+
+#>
+
+
+
+function SplitArray($str,$separator){
+
+   $Array =$str.Split($separator)
+
+    return $Array;
+
+}
+
+
+
+Function UpdateMultilist($item, $path, $fieldName){
+
+$item.Editing.BeginEdit() 
+
+# $allItems = Get-ChildItem -Path '/sitecore/content/ListManagerTask' -Recurse
+
+
+
+ $authorItem=Get-Item -Path $AuthorPath/$authorName -ErrorAction SilentlyContinue
+
+$allItems = Get-ChildItem -Path $path -Recurse
+
+
+
+foreach($multilistItem in $allItems) { 
+
+    if (![string]::IsNullOrEmpty($item[$templateField.Authors])) {
+
+        $item[$templateField.Authors] += "|";
+
+    }
+
+    $item[$templateField.Authors] += $multilistItem.ID.ToString()
+
+} 
+
+
+
+$item.Editing.EndEdit() | Out-Null
+
+    
+
+}
